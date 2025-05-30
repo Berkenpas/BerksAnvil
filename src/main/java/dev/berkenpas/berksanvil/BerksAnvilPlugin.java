@@ -27,6 +27,8 @@ public final class BerksAnvilPlugin extends JavaPlugin implements Listener {
         if (left == null || right == null) return;
 
         ItemStack result = left.clone();
+        int baseCost = inventory.getRepairCost();
+        int cost = baseCost > 0 ? baseCost : 1;
 
         // Handle enchanted book application
         if (right.getItemMeta() instanceof EnchantmentStorageMeta) {
@@ -34,9 +36,9 @@ public final class BerksAnvilPlugin extends JavaPlugin implements Listener {
             Map<Enchantment, Integer> storedEnchants = bookMeta.getStoredEnchants();
             for (Map.Entry<Enchantment, Integer> entry : storedEnchants.entrySet()) {
                 result.addUnsafeEnchantment(entry.getKey(), entry.getValue());
+                cost += entry.getValue();
             }
             event.setResult(result);
-            inventory.setRepairCost(1); // Custom cost but doesn't trigger "Too Expensive"
         }
         // Handle combining same items (e.g. swords with enchants)
         else if (left.getType() == right.getType()) {
@@ -45,9 +47,12 @@ public final class BerksAnvilPlugin extends JavaPlugin implements Listener {
             for (Map.Entry<Enchantment, Integer> entry : rightEnchants.entrySet()) {
                 int level = Math.max(entry.getValue(), leftEnchants.getOrDefault(entry.getKey(), 0));
                 result.addUnsafeEnchantment(entry.getKey(), level);
+                cost += level;
             }
             event.setResult(result);
-            inventory.setRepairCost(1);
         }
+
+        // Clamp to vanilla max of 39 levels
+        inventory.setRepairCost(Math.min(cost, 39));
     }
-} 
+}
