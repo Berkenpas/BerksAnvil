@@ -19,6 +19,7 @@ public class BerksAnvilPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
+        // Register this class as an event listener
         getServer().getPluginManager().registerEvents(this, this);
     }
 
@@ -34,16 +35,12 @@ public class BerksAnvilPlugin extends JavaPlugin implements Listener {
         boolean rightBook  = metaRight instanceof EnchantmentStorageMeta;
 
         // Mirror vanilla behavior:
-        // 1) Cannot combine a book in the left slot with an item in the right slot
-        if (leftBook && !rightBook) {
-            return;
-        }
-        // 2) Cannot combine two different items
-        if (!leftBook && !rightBook && left.getType() != right.getType()) {
-            return;
-        }
+        // 1) Book left + item right is invalid
+        if (leftBook && !rightBook) return;
+        // 2) Two different items invalid
+        if (!leftBook && !rightBook && left.getType() != right.getType()) return;
 
-        // Base is always the left slot; sacrifice is the right
+        // Base is always the left slot; sacrifice is the right slot
         ItemStack result = left.clone();
         ItemMeta baseMeta  = metaLeft;
         ItemMeta otherMeta = metaRight;
@@ -56,7 +53,7 @@ public class BerksAnvilPlugin extends JavaPlugin implements Listener {
         // Combine enchantments
         Map<Enchantment,Integer> combined = combineEnchants(baseEnchants, otherEnchants);
 
-        // Apply combined enchants
+        // Apply combined enchantments
         if (metaOut instanceof EnchantmentStorageMeta) {
             EnchantmentStorageMeta esm = (EnchantmentStorageMeta) metaOut;
             esm.getStoredEnchants().keySet().forEach(esm::removeStoredEnchant);
@@ -66,15 +63,16 @@ public class BerksAnvilPlugin extends JavaPlugin implements Listener {
             combined.forEach((ench, lvl) -> metaOut.addEnchant(ench, lvl, true));
         }
 
+        // Set the result and clamp cost
         result.setItemMeta(metaOut);
+        int vanillaCost = event.getInventory().getRepairCost();
+        event.getInventory().setRepairCost(Math.min(vanillaCost, HARD_MAX_COST));
         event.setResult(result);
-
-        // Clamp cost
-        int rawCost = calculateVanillaCost(baseEnchants, otherEnchants);
-        event.getInventory().setRepairCost(Math.min(rawCost, HARD_MAX_COST));
     }
 
-    /** Retrieves enchantments from meta, handling enchanted books. */
+    /**
+     * Retrieve enchantments from ItemMeta, handling enchanted books.
+     */
     private Map<Enchantment,Integer> getEnchantMap(ItemMeta meta) {
         if (meta instanceof EnchantmentStorageMeta) {
             return new HashMap<>(((EnchantmentStorageMeta) meta).getStoredEnchants());
@@ -83,12 +81,18 @@ public class BerksAnvilPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    /** Merge two enchantment maps with vanilla rules. */
+    /**
+     * Merge two enchantment maps with vanilla rules:
+     *  - Same level → +1 (capped)
+     *  - Different levels → higher
+     *  - Unique enchants → carried
+     */
     private Map<Enchantment, Integer> combineEnchants(
             Map<Enchantment,Integer> a,
             Map<Enchantment,Integer> b
     ) {
         Map<Enchantment, Integer> out = new HashMap<>();
+        // Process base enchants
         for (var entry : a.entrySet()) {
             Enchantment ench = entry.getKey();
             int lvlA = entry.getValue();
@@ -103,20 +107,10 @@ public class BerksAnvilPlugin extends JavaPlugin implements Listener {
                 out.put(ench, lvlA);
             }
         }
+        // Add sac enchants that weren't in base
         for (var entry : b.entrySet()) {
             out.putIfAbsent(entry.getKey(), entry.getValue());
         }
         return out;
-    }
-
-    /** Simple cost: sum of all enchant levels from both inputs. */
-    private int calculateVanillaCost(
-            Map<Enchantment,Integer> a,
-            Map<Enchantment,Integer> b
-    ) {
-        int cost = 0;
-        for (int lvl : a.values()) cost += lvl;
-        for (int lvl : b.values()) cost += lvl;
-        return cost;
     }
 }
