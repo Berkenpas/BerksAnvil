@@ -1,116 +1,129 @@
 package dev.berkenpas.berksanvil;
 
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.NamespacedKey;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.PrepareAnvilEvent;
+import org.bukkit.inventory.AnvilInventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
+import org.bukkit.plugin.java.JavaPlugin;
+
 import java.util.HashMap;
 import java.util.Map;
 
-import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.event.Listener;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
-import org.bukkit.event.inventory.PrepareAnvilEvent;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.EnchantmentStorageMeta;
-import org.bukkit.enchantments.Enchantment;
-
 public class BerksAnvilPlugin extends JavaPlugin implements Listener {
-
-    private static final int HARD_MAX_COST = 39;
-
-    @Override
-    public void onEnable() {
-        // Register this class as an event listener
-        getServer().getPluginManager().registerEvents(this, this);
+    private static final Map<Enchantment, Integer> ENCHANTMENT_BASE_COSTS = new HashMap<>();
+    static {
+        addCost("protection", 1);
+        addCost("fire_protection", 1);
+        addCost("feather_falling", 1);
+        addCost("blast_protection", 2);
+        addCost("projectile_protection", 1);
+        addCost("thorns", 4);
+        addCost("respiration", 2);
+        addCost("depth_strider", 2);
+        addCost("aqua_affinity", 2);
+        addCost("frost_walker", 2);
+        addCost("binding_curse", 4);
+        addCost("swift_sneak", 4);
+        addCost("sharpness", 1);
+        addCost("smite", 1);
+        addCost("bane_of_arthropods", 1);
+        addCost("knockback", 1);
+        addCost("fire_aspect", 2);
+        addCost("looting", 2);
+        addCost("sweeping", 2);
+        addCost("efficiency", 1);
+        addCost("silk_touch", 4);
+        addCost("unbreaking", 1);
+        addCost("fortune", 2);
+        addCost("mending", 2);
+        addCost("power", 1);
+        addCost("punch", 2);
+        addCost("flame", 2);
+        addCost("infinity", 4);
+        addCost("luck_of_the_sea", 2);
+        addCost("lure", 2);
+        addCost("impaling", 2);
+        addCost("riptide", 2);
+        addCost("loyalty", 1);
+        addCost("channeling", 4);
+        addCost("multishot", 2);
+        addCost("piercing", 1);
+        addCost("quick_charge", 1);
+        addCost("soul_speed", 4);
+        addCost("vanishing_curse", 4);
+        // Add more as needed
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    private static void addCost(String key, int cost) {
+        Enchantment ench = Enchantment.getByKey(NamespacedKey.minecraft(key));
+        if (ench != null) {
+            ENCHANTMENT_BASE_COSTS.put(ench, cost);
+        }
+    }
+
+        @Override
+    public void onEnable() {
+        Bukkit.getPluginManager().registerEvents(this, this);
+    }
+
+    @EventHandler
     public void onPrepareAnvil(PrepareAnvilEvent event) {
-        ItemStack left  = event.getInventory().getItem(0);
-        ItemStack right = event.getInventory().getItem(1);
+        AnvilInventory inv = event.getInventory();
+        ItemStack left = inv.getItem(0);
+        ItemStack right = inv.getItem(1);
         if (left == null || right == null) return;
 
-        ItemMeta metaLeft  = left.getItemMeta();
-        ItemMeta metaRight = right.getItemMeta();
-        boolean leftBook   = metaLeft  instanceof EnchantmentStorageMeta;
-        boolean rightBook  = metaRight instanceof EnchantmentStorageMeta;
+        // Handle Creative-style enchanted book application
+        if (right.getType() == Material.ENCHANTED_BOOK) {
+            EnchantmentStorageMeta bookMeta = (EnchantmentStorageMeta) right.getItemMeta();
+            Map<Enchantment, Integer> bookEnchants = bookMeta.getStoredEnchants();
+            if (bookEnchants.isEmpty()) return;
 
-        // Mirror vanilla behavior:
-        // 1) Book left + item right is invalid
-        if (leftBook && !rightBook) return;
-        // 2) Two different items invalid
-        if (!leftBook && !rightBook && left.getType() != right.getType()) return;
+            ItemStack forcedResult = left.clone();
+            int baseCost = 0;
+            for (Map.Entry<Enchantment, Integer> entry : bookEnchants.entrySet()) {
+                Enchantment ench = entry.getKey();
+                int level = entry.getValue();
 
-        // Base is always the left slot; sacrifice is the right slot
-        ItemStack result = left.clone();
-        ItemMeta baseMeta  = metaLeft;
-        ItemMeta otherMeta = metaRight;
-        ItemMeta metaOut   = result.getItemMeta();
-
-        // Gather enchantments
-        Map<Enchantment,Integer> baseEnchants  = getEnchantMap(baseMeta);
-        Map<Enchantment,Integer> otherEnchants = getEnchantMap(otherMeta);
-
-        // Combine enchantments
-        Map<Enchantment,Integer> combined = combineEnchants(baseEnchants, otherEnchants);
-
-        // Apply combined enchantments
-        if (metaOut instanceof EnchantmentStorageMeta) {
-            EnchantmentStorageMeta esm = (EnchantmentStorageMeta) metaOut;
-            esm.getStoredEnchants().keySet().forEach(esm::removeStoredEnchant);
-            combined.forEach((ench, lvl) -> esm.addStoredEnchant(ench, lvl, true));
-        } else {
-            metaOut.getEnchants().keySet().forEach(metaOut::removeEnchant);
-            combined.forEach((ench, lvl) -> metaOut.addEnchant(ench, lvl, true));
-        }
-
-        // Set the result and clamp cost
-        result.setItemMeta(metaOut);
-        int vanillaCost = event.getInventory().getRepairCost();
-        event.getInventory().setRepairCost(Math.min(vanillaCost, HARD_MAX_COST));
-        event.setResult(result);
-    }
-
-    /**
-     * Retrieve enchantments from ItemMeta, handling enchanted books.
-     */
-    private Map<Enchantment,Integer> getEnchantMap(ItemMeta meta) {
-        if (meta instanceof EnchantmentStorageMeta) {
-            return new HashMap<>(((EnchantmentStorageMeta) meta).getStoredEnchants());
-        } else {
-            return new HashMap<>(meta.getEnchants());
-        }
-    }
-
-    /**
-     * Merge two enchantment maps with vanilla rules:
-     *  - Same level → +1 (capped)
-     *  - Different levels → higher
-     *  - Unique enchants → carried
-     */
-    private Map<Enchantment, Integer> combineEnchants(
-            Map<Enchantment,Integer> a,
-            Map<Enchantment,Integer> b
-    ) {
-        Map<Enchantment, Integer> out = new HashMap<>();
-        // Process base enchants
-        for (var entry : a.entrySet()) {
-            Enchantment ench = entry.getKey();
-            int lvlA = entry.getValue();
-            int lvlB = b.getOrDefault(ench, 0);
-            if (lvlB > 0) {
-                if (lvlA == lvlB) {
-                    out.put(ench, Math.min(lvlA + 1, ench.getMaxLevel()));
-                } else {
-                    out.put(ench, Math.max(lvlA, lvlB));
-                }
-            } else {
-                out.put(ench, lvlA);
+                // Apply all book enchantments (even "illegal" ones, like creative)
+                forcedResult.addUnsafeEnchantment(ench, level);
+                int enchCost = ENCHANTMENT_BASE_COSTS.getOrDefault(ench, 1) * level;
+                baseCost += enchCost;
             }
+
+            // Simplified work penalty: +1 for every time combined in the anvil
+            int workPenalty = getSimpleWorkPenalty(left) + 1; // always increase by 1 for a new anvil use
+            int totalCost = baseCost + workPenalty;
+
+            // Cap at 39
+            int repairCost = Math.min(39, totalCost);
+
+            // Set result and cost
+            event.setResult(forcedResult);
+            inv.setRepairCost(repairCost);
+            return;
         }
-        // Add sac enchants that weren't in base
-        for (var entry : b.entrySet()) {
-            out.putIfAbsent(entry.getKey(), entry.getValue());
+
+        // Fallback: If Paper already gives a result, just cap the cost at 39 if needed
+        ItemStack vanillaResult = event.getResult();
+        if (vanillaResult != null && vanillaResult.getType() != Material.AIR) {
+            if (inv.getRepairCost() > 39) inv.setRepairCost(39);
+            return;
         }
-        return out;
+    }
+
+    // Simplified "work penalty": Instead of reading the NBT "RepairCost", just count unsafe enchantments
+    // In vanilla, RepairCost NBT increases each time you use anvil; here we just simulate +1 per use
+    private int getSimpleWorkPenalty(ItemStack item) {
+        // Could be improved by storing/reading actual repair cost in NBT via a library like PersistentDataContainer
+        // but for now we keep it simple
+        return 0;
     }
 }
